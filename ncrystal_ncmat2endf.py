@@ -45,13 +45,12 @@ except ImportError:
     raise SystemExit('Could not import NCrystal. Check the package was correctly installed.\nhttps://github.com/mctools/ncrystal/wiki')
 
 try:
-    from endf_parserpy.endf_parser import EndfParser
-    from endf_parserpy.accessories import EndfDict
-    from endf_parserpy.endf6_plumbing import update_directory
-    from endf_parserpy.fortran_utils import read_fort_floats
-    from endf_parserpy.fortran_utils import write_fort_floats
+    import endf_parserpy
+    from endf_parserpy.interpreter.fortran_utils import read_fort_floats
+    from endf_parserpy.interpreter.fortran_utils import write_fort_floats
 except ImportError:
-    raise SystemExit('Could not import endf_parserpy. Check the package was correctly installed.\nhttps://endf-parserpy.readthedocs.io/')
+    # TODO: Add version check
+    raise SystemExit('Could not import endf_parserpy. Check the package was correctly installed, with a version equal or higher than 0.10.3.\nhttps://endf-parserpy.readthedocs.io/')
 
 available_elastic_modes = ('greater', 'scaled', 'mixed')
 mass_neutron = 1.04540751e-4 #  eV*ps^2*Angstrom^-2 
@@ -271,7 +270,8 @@ class NuclearData():
         if elastic_mode not in available_elastic_modes:
             raise ValueError(f"Elastic mode '{elastic_mode}' not in {available_elastic_modes}")
         if elastic_mode == 'mixed':
-            from endf_parserpy.endf_recipes import endf_recipe_mf7
+            # TODO: this check will not be longer necessary when we check for version
+            from endf_parserpy.endf_recipes.endf6 import endf_recipe_mf7
             if (endf_recipe_mf7.ENDF_RECIPE_MF7_MT2.find('LTHR==3')==-1):
                 raise SystemExit('Mixed elastic format not supported by the version of endf-parserpy installed in the system.')
         for frac, ad in self._composition:
@@ -561,8 +561,8 @@ class EndfFile():
         verbosity : int
             Level of verbosity of the output (0: quiet)
         """
-        self._endf_dict = EndfDict()
-        self._parser = EndfParser(explain_missing_variable=True, cache_dir=False)
+        self._endf_dict = endf_parserpy.EndfDict()
+        self._parser = endf_parserpy.EndfParser(explain_missing_variable=True, cache_dir=False)
         self._element_name = element_name
         self._mat = mat
         self._isotopic_expansion = isotopic_expansion
@@ -572,7 +572,7 @@ class EndfFile():
         self._endf_dict['0/0']['TAPEDESCR'] = 'Created with ncmat2endf'
         self._createMF1(data, endf_parameters)
         self._createMF7(data, endf_parameters)
-        update_directory(self._endf_dict, self._parser)
+        endf_parserpy.update_directory(self._endf_dict, self._parser)
 
     def _createMF7(self, data, endf_parameters):
         """Creates MF=7 file of a thermal ENDF file. 
@@ -693,8 +693,9 @@ class EndfFile():
         d['teff0_table/Tint'] = temperatures.tolist()
         d['teff0_table/NBT'] = [len(temperatures)]
         d['teff0_table/INT'] = [2]
-        from endf_parserpy import endf_recipes
-        if 451 in endf_recipes.endf_recipe_dictionary[7].keys():
+        from endf_parserpy.endf_recipes import endf6
+        if 451 in endf6.endf_recipe_dictionary[7].keys():
+            # TODO: this check will not be longer necessary when we check for version
             if self._isotopic_expansion:
                 raise NotImplementedError('Isotopic expansion not yet implemented')
             else:

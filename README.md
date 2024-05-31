@@ -23,13 +23,6 @@ package can be installed using `pip`:
 pip install endf-parserpy --upgrade
 ```
 
-At the moment of writing this (May 2024) some features of MF=7 are not yet implemented in the main distribution
-of `endf-parserpy`. In the mean time, a custom version that includes the changes can be installed using:
-
-```
-pip install git+https://github.com/marquezj/endf-parserpy.git@main
-```
-
 ## Usage
 
 The script can be used from the command line:

@@ -147,9 +147,32 @@ class ElementData():
         self._elastic = None
         self._element_name = ad.displayLabel()
         Z = '{:3d}'.format(ad.Z())
-        A = '  0' if ad.isElement() else '{:3d}'.format(ad.A())
-        self._zsymam = '{:3s}-{:2s}-{:3s}'.format(Z,self._element_name,A)
+        A = '  0' if ad.isNaturalElement() else '{:3d}'.format(ad.A())
+        sym = self._get_symbol(self._element_name).ljust(3)
+        self._zsymam = '{:3s}-{:3s}-{:3s}'.format(Z,sym,A)
         self._za = ad.Z()*1000+ad.A()
+
+    def _get_symbol(self, isotope_name):
+        """Get element symbol from isotope name. E.g. Be9 -> Be
+    
+        Parameters
+        ==========
+        isotope_name: string
+
+        Returns
+        ==========
+        element_symbol: string
+
+        """
+
+        symbol = ''        
+        for c in isotope_name:
+            if (ord(c) >= 97 and ord(c) <= 122) or (ord(c) >= 65 and ord(c) <= 90):
+                symbol += c
+            else:
+                break
+        return symbol
+
 
     @property
     def alpha(self):
@@ -422,10 +445,14 @@ class NuclearData():
                         self._elements[element_name].dwi.append(msd*2*mass_neutron/hbar**2)
         if self._verbosity > 1:
             print('>> Prepare elastic approximations')
+        if elastic_mode == 'scaled' and self._incoherent_fraction < 1e-6:
+            elastic_mode = 'greater'
+            if self._verbosity>1:
+                print(f'>> Scaled elastic mode requested but all elements are coherent.')
         for frac, ad in self._composition:
             element_name = ad.displayLabel()
             if elastic_mode == 'mixed': # iel = 100
-                if (self._sigmaE == None):      # mixed elastic requested bu only incoherent available
+                if (self._sigmaE == None):      # mixed elastic requested but only incoherent available
                     if self._verbosity>1:
                         print(f'>> Mixed elastic mode for {element_name} but no Bragg edges found: incoherent approximation')
                     self._elements[element_name].sigma_i = (ad.incoherentXS() + ad.coherentXS())

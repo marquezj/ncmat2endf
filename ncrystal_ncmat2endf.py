@@ -306,11 +306,11 @@ class NuclearData():
         else:
             self._edges = None
             self._sigmaE = None
+        self._incoherent_fraction = -1
         if (len(self._composition) > 1) and (elastic_mode == 'scaled'):
             #
             # Find element with minimum incoherent contribution. 
             #
-            self._incoherent_fraction = -1
             self._designated_coherent_atom = None
             for frac, ad in self._composition:
                 element_name = ad.displayLabel()
@@ -1062,4 +1062,3 @@ if __name__ == '__main__':
         print('Files created:')
         for fn, frac in file_names: print(f'  {fn}')
     sys.exit(0)
-    

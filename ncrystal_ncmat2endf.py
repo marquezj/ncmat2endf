@@ -412,10 +412,14 @@ class NuclearData():
                 # Load coherent elastic data
                 #
                 if T == self._temperatures[0]:
+                    # Find unique Bragg edges, as represented in ENDF-6 floats
                     edges = np.array([NC.wl2ekin(2.0*e.dspacing) for e in m.info.hklObjects()])
                     self._edges = np.unique(np.array([read_fort_floats(write_fort_floats([x]), n=1) for x in edges]))
-                midpoints = np.concatenate((0.5*(self._edges[:-1]+self._edges[1:]), [self._edges[-1]]))
-                sigmaE = m.scatter.xsect(midpoints)*midpoints
+                    # Coherent scattering XS is evaluated between edges
+                    eps = 1e-6
+                    self._evalpoints = np.concatenate(((1-eps)*self._edges[:-1]+eps*self._edges[1:], [self._edges[-1]]))
+                sigmaE = m.scatter.xsect(self._evalpoints)*self._evalpoints
+                assert np.all(sigmaE[:-1] <= sigmaE[1:]), 'Sigma*E in Bragg edges not cummulative'
                 self._sigmaE.append(sigmaE)
             #
             for di in m.info.dyninfos:

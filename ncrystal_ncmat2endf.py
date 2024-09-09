@@ -406,27 +406,17 @@ class NuclearData():
 
     def _get_elastic_data(self, elastic_mode):
         for T in self._temperatures:
-            m = NC.load(f'{self._ncmat_fn};temp={T}K')
+            m = NC.load(f'{self._ncmat_fn};temp={T}K;vdoslux={self._vdoslux};comp=bragg')
             if m.info.hasAtomPositions():
                 #
                 # Load coherent elastic data
                 #
-                xsectfact = 0.5/(m.info.getStructureInfo()['n_atoms']*m.info.getStructureInfo()['volume'])
-                edges = []
-                sigmaE = []
-                for hkl in m.info.hklList():
-                    wl = 2.0*hkl[4] #dspacing
-                    edges.append(NC.wl2ekin(wl))
-                    fdm = hkl[5] * hkl[3] * hkl[4]
-                    sigmaE.append(NC.wl2ekin(wl) * fdm * xsectfact * wl * wl)
-                edges = np.array(edges)
-                sigmaE = np.cumsum(np.array(sigmaE))
-                if T != self._temperatures[0]:
-                    l = len(self._edges[0]) - len(edges)
-                    edges = self._edges[0]
-                    sigmaE = np.concatenate((sigmaE, sigmaE[-1]*np.ones(l)))
+                if T == self._temperatures[0]:
+                    edges = np.array([NC.wl2ekin(2.0*e.dspacing) for e in m.info.hklObjects()])
+                    self._edges = np.unique(np.array([read_fort_floats(write_fort_floats([x]), n=1) for x in edges]))
+                midpoints = np.concatenate((0.5*(self._edges[:-1]+self._edges[1:]), [self._edges[-1]]))
+                sigmaE = m.scatter.xsect(midpoints)*midpoints
                 self._sigmaE.append(sigmaE)
-                self._edges.append(edges)
             #
             for di in m.info.dyninfos:
                 element_name = di.atomData.displayLabel()
@@ -631,7 +621,7 @@ class EndfFile():
             d['ZA'] = za
             d['AWR'] = awr
             if elastic in ['coherent', 'mixed']:
-                edges  = data.edges[0]
+                edges  = data.edges
                 sigmaE = data.sigmaE[0]
                 d['T0'] = temperatures[0]
                 d['LT'] = len(temperatures)-1

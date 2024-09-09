@@ -42,15 +42,18 @@ import warnings
 try:
     import NCrystal as NC
 except ImportError:
-    raise SystemExit('Could not import NCrystal. Check the package was correctly installed.\nhttps://github.com/mctools/ncrystal/wiki')
+    raise SystemExit('Could not import NCrystal. Check the package was correctly installed, with a version equal or higher than 3.9.7.\nhttps://github.com/mctools/ncrystal/wiki')
+assert NC.version_num >=  3009007, "Too old NCrystal found. Version 3.9.7 or above required"
 
 try:
     import endf_parserpy
     from endf_parserpy.interpreter.fortran_utils import read_fort_floats
     from endf_parserpy.interpreter.fortran_utils import write_fort_floats
 except ImportError:
-    # TODO: Add version check
-    raise SystemExit('Could not import endf_parserpy. Check the package was correctly installed, with a version equal or higher than 0.10.3.\nhttps://endf-parserpy.readthedocs.io/')
+    raise SystemExit('Could not import endf_parserpy. Check the package was correctly installed, with a version equal or higher than 0.11.0.\nhttps://endf-parserpy.readthedocs.io/')
+version_num = sum([int(x)*10**(3*n) for x,n in zip(endf_parserpy.__version__.split('.'), reversed(range(3)))])
+assert version_num >=  1100, "Too old endf-parserpy found. Version 0.11.0 or above required"
+
 
 available_elastic_modes = ('greater', 'scaled', 'mixed')
 mass_neutron = 1.04540751e-4 #  eV*ps^2*Angstrom^-2 
@@ -283,7 +286,7 @@ class NuclearData():
         """
         self._temperatures = np.sort(np.asarray(temperatures))
         self._ncmat_fn = ncmat_fn
-        mat = NC.load(ncmat_fn)
+        mat = NC.load(ncmat_fn+f';vdoslux={vdoslux}')
         self._composition = mat.info.composition
         self._elements = {}
         self._ncrystal_comments = None
@@ -292,11 +295,6 @@ class NuclearData():
         self._combine_temperatures = False # False: use (alpha, beta) grid for lowest temperature; True: combine all temperatures
         if elastic_mode not in available_elastic_modes:
             raise ValueError(f"Elastic mode '{elastic_mode}' not in {available_elastic_modes}")
-        if elastic_mode == 'mixed':
-            # TODO: this check will not be longer necessary when we check for version
-            from endf_parserpy.endf_recipes.endf6 import endf_recipe_mf7
-            if (endf_recipe_mf7.ENDF_RECIPE_MF7_MT2.find('LTHR==3')==-1):
-                raise SystemExit('Mixed elastic format not supported by the version of endf-parserpy installed in the system.')
         for frac, ad in self._composition:
             element_name = ad.displayLabel()
             self._elements[element_name] = ElementData(ad)
@@ -366,7 +364,7 @@ class NuclearData():
 
     def _get_alpha_beta_grid(self):
         T = self._temperatures[0]
-        m = NC.load(f'{self._ncmat_fn};temp={T}K')
+        m = NC.load(f'{self._ncmat_fn};temp={T}K;vdoslux={self._vdoslux}')
         kT0 = 0.0253 # eV
         kT = kT0*T/293.6 # eV
         for di in m.info.dyninfos:
@@ -384,7 +382,7 @@ class NuclearData():
             # to debug libraries.
             #
             for T in self._temperatures[1:]:
-                m = NC.load(f'{self._ncmat_fn};temp={T}K')
+                m = NC.load(f'{self._ncmat_fn};temp={T}K;vdoslux={self._vdoslux}')
                 kT = kT0*T/293.6 # eV
                 for di in m.info.dyninfos:
                     element_name = di.atomData.displayLabel()
@@ -566,7 +564,7 @@ class EndfFile():
     write(endf_fn)
         Write ENDF file.
     """
-    def __init__(self, element_name, data, mat, endf_parameters, isotopic_expansion, verbosity=1):
+    def __init__(self, element_name, data, mat, endf_parameters, isotopic_expansion=False, verbosity=1):
         r"""
         Parameters
         ----------
@@ -720,27 +718,22 @@ class EndfFile():
         d['teff0_table/Tint'] = temperatures.tolist()
         d['teff0_table/NBT'] = [len(temperatures)]
         d['teff0_table/INT'] = [2]
-        from endf_parserpy.endf_recipes import endf6
-        if 451 in endf6.endf_recipe_dictionary[7].keys():
-            # TODO: this check will not be longer necessary when we check for version
-            if self._isotopic_expansion:
-                raise NotImplementedError('Isotopic expansion not yet implemented')
-            else:
-                self._endf_dict['7/451'] = {}
-                d = self._endf_dict['7/451']
-                d['MAT'] = mat
-                d['ZA'] = za
-                d['AWR'] = awr
-                d['NA'] = 1
-                d['NAS'] = 1
-                d['NI'] = {1:1}
-                d['ZAI'] = {1:{1:za}}
-                d['LISI'] = {1:{1:0}}
-                d['AFI'] = {1:{1:1.0}}
-                d['SFI'] = {1:{1:data.elements[self._element_name].sigma_free}}
-                d['AWRI'] = {1:{1:awr}}
+        if self._isotopic_expansion:
+            raise NotImplementedError('Isotopic expansion not yet implemented')
         else:
-            warnings.warn('The installed version of ENDF-parserpy does not support MF=7/MT=451. Not written.')
+            self._endf_dict['7/451'] = {}
+            d = self._endf_dict['7/451']
+            d['MAT'] = mat
+            d['ZA'] = za
+            d['AWR'] = awr
+            d['NA'] = 1
+            d['NAS'] = 1
+            d['NI'] = {1:1}
+            d['ZAI'] = {1:{1:za}}
+            d['LISI'] = {1:{1:0}}
+            d['AFI'] = {1:{1:1.0}}
+            d['SFI'] = {1:{1:data.elements[self._element_name].sigma_free}}
+            d['AWRI'] = {1:{1:awr}}
 
     def _createMF1(self, data, endf_parameters):
         """Creates MF=1 file of a thermal ENDF file. 

@@ -59,6 +59,22 @@ available_elastic_modes = ('greater', 'scaled', 'mixed')
 mass_neutron = 1.04540751e-4 #  eV*ps^2*Angstrom^-2 
 hbar = 0.658211951e-3 # eV*ps 
 
+def endf_roundoff(x):
+    """Limit the precision of a float to what can be represented in an ENDF-6 file
+       
+    Parameters
+    ----------
+    x : Iterable of float
+        Array to process
+
+    Returns
+    -------
+    numpy array
+        Processed array
+        
+    """
+    return np.array(read_fort_floats(write_fort_floats(x), n=len(x)))
+    
 def wrap_string(inp, lim=66):
     """Return string with lines wrapped to a given width.
        
@@ -395,8 +411,8 @@ class NuclearData():
                 #
                 # Remove points that cannot be represented in ENDF data
                 #
-                self._elements[element_name].alpha = np.unique(np.array([read_fort_floats(write_fort_floats([x]), n=1) for x in self._elements[element_name].alpha]))
-                self._elements[element_name].beta_total = np.unique(np.array([read_fort_floats(write_fort_floats([x]), n=1) for x in self._elements[element_name].beta_total]))
+                self._elements[element_name].alpha = np.unique(endf_roundoff(self._elements[element_name].alpha))
+                self._elements[element_name].beta_total = np.unique(endf_roundoff(self._elements[element_name].beta_total))
                 x = self._elements[element_name].beta_total[np.where(self._elements[element_name].beta_total<=0)] # get negative beta
                 self._elements[element_name].beta = -x[::-1] # Invert beta and change sign
                 self._elements[element_name].beta[0] = 0.0
@@ -412,10 +428,14 @@ class NuclearData():
                 # Load coherent elastic data
                 #
                 if T == self._temperatures[0]:
+                    # Find unique Bragg edges, as represented in ENDF-6 floats
                     edges = np.array([NC.wl2ekin(2.0*e.dspacing) for e in m.info.hklObjects()])
-                    self._edges = np.unique(np.array([read_fort_floats(write_fort_floats([x]), n=1) for x in edges]))
-                midpoints = np.concatenate((0.5*(self._edges[:-1]+self._edges[1:]), [self._edges[-1]]))
-                sigmaE = m.scatter.xsect(midpoints)*midpoints
+                    self._edges = np.unique(endf_roundoff(edges))
+                    # Coherent scattering XS is evaluated between edges
+                    eps = 1e-6
+                    self._evalpoints = np.concatenate(((1-eps)*self._edges[:-1]+eps*self._edges[1:], [self._edges[-1]]))
+                sigmaE = endf_roundoff(m.scatter.xsect(self._evalpoints)*self._evalpoints)
+                assert np.all(sigmaE[:-1] <= sigmaE[1:]), 'Sigma*E in Bragg edges not cummulative'
                 self._sigmaE.append(sigmaE)
             #
             for di in m.info.dyninfos:
@@ -554,7 +574,7 @@ class EndfFile():
     write(endf_fn)
         Write ENDF file.
     """
-    def __init__(self, element_name, data, mat, endf_parameters, isotopic_expansion=False, verbosity=1):
+    def __init__(self, element_name, data, mat, endf_parameters, include_gif=False, isotopic_expansion=False, verbosity=1):
         r"""
         Parameters
         ----------
@@ -570,6 +590,9 @@ class EndfFile():
         endf_parameters : EndfParameters
             Parameters for the ENDF-6 file
         
+        include_gif: boolean
+            Include the generalized information in MF=7/MT=451 in isotopes
+        
         isotopic_expansion: boolean
             Expand the information in MF=7/MT=451 in isotopes
         
@@ -580,6 +603,8 @@ class EndfFile():
         self._parser = endf_parserpy.EndfParser(explain_missing_variable=True, cache_dir=False)
         self._element_name = element_name
         self._mat = mat
+        assert ((not isotopic_expansion) or include_gif), "Isotopic expansion requires generalized information file, use --gif"
+        self._include_gif = include_gif
         self._isotopic_expansion = isotopic_expansion
         self._verbosity = verbosity
         self._endf_dict['0/0'] = {}
@@ -708,22 +733,23 @@ class EndfFile():
         d['teff0_table/Tint'] = temperatures.tolist()
         d['teff0_table/NBT'] = [len(temperatures)]
         d['teff0_table/INT'] = [2]
-        if self._isotopic_expansion:
-            raise NotImplementedError('Isotopic expansion not yet implemented')
-        else:
-            self._endf_dict['7/451'] = {}
-            d = self._endf_dict['7/451']
-            d['MAT'] = mat
-            d['ZA'] = za
-            d['AWR'] = awr
-            d['NA'] = 1
-            d['NAS'] = 1
-            d['NI'] = {1:1}
-            d['ZAI'] = {1:{1:za}}
-            d['LISI'] = {1:{1:0}}
-            d['AFI'] = {1:{1:1.0}}
-            d['SFI'] = {1:{1:data.elements[self._element_name].sigma_free}}
-            d['AWRI'] = {1:{1:awr}}
+        if self._include_gif:        
+            if self._isotopic_expansion:
+                raise NotImplementedError('Isotopic expansion not yet implemented')
+            else:
+                self._endf_dict['7/451'] = {}
+                d = self._endf_dict['7/451']
+                d['MAT'] = mat
+                d['ZA'] = za
+                d['AWR'] = awr
+                d['NA'] = 1
+                d['NAS'] = 1
+                d['NI'] = {1:1}
+                d['ZAI'] = {1:{1:za}}
+                d['LISI'] = {1:{1:0}}
+                d['AFI'] = {1:{1:1.0}}
+                d['SFI'] = {1:{1:data.elements[self._element_name].sigma_free}}
+                d['AWRI'] = {1:{1:awr}}
 
     def _createMF1(self, data, endf_parameters):
         """Creates MF=1 file of a thermal ENDF file. 
@@ -901,7 +927,7 @@ class EndfParameters():
     def endate(self):
         return self._endate
 
-def ncmat2endf(ncmat_fn, name, endf_parameters, temperatures=(293.6,), mat_numbers=None, elastic_mode='scaled', isotopic_expansion=False, vdoslux=3, verbosity=1):
+def ncmat2endf(ncmat_fn, name, endf_parameters, temperatures=(293.6,), mat_numbers=None, elastic_mode='scaled', include_gif=False, isotopic_expansion=False, vdoslux=3, verbosity=1):
     """Generates a set of ENDF-6 formatted files for a given NCMAT file.
        
     Parameters
@@ -923,6 +949,9 @@ def ncmat2endf(ncmat_fn, name, endf_parameters, temperatures=(293.6,), mat_numbe
                     for polyatomic scatterers, coherent scattering for the whole system is assigned to the
                     atom with minimum incoherent cross section, and its incoherent contribution is distributed
                     among the other atoms
+
+    include_gif: boolean
+        Include the generalized information in MF=7/MT=451 in isotopes
 
     isotopic_expansion: boolean
         Expand the information in MF=7/MT=451 in isotopes
@@ -964,7 +993,7 @@ def ncmat2endf(ncmat_fn, name, endf_parameters, temperatures=(293.6,), mat_numbe
         mat = 999 if mat_numbers is None else mat_numbers[element_name]
         endf_fn = f'tsl_{name}.endf' if element_name == name else f'tsl_{element_name}_in_{name}.endf'
         if data.elements[element_name].sab is not None:
-            endf_file = EndfFile(element_name, data, mat, endf_parameters, isotopic_expansion, verbosity)
+            endf_file = EndfFile(element_name, data, mat, endf_parameters, include_gif, isotopic_expansion, verbosity)
             endf_file.write(endf_fn)
             file_names.append((endf_fn, frac))
         else:
@@ -999,8 +1028,11 @@ def parse_args(args=sys.argv[1:]):
     parser.add_argument('-l', '--luxury',
                         help='Set the NCrystal vdoslux parameter used to generate the library. 3 is normal, 4 is fine and 5 is very fine.',
                         type=int, default=3, choices=range(1, 6))
+    parser.add_argument('-g', '--gif',
+                        help='Include the generalized information file (MF=7/MT=451)',
+                        action='store_true')
     parser.add_argument('-i', '--isotopic',
-                        help='Expand the each scatterer element into its isotopes',
+                        help='Expand each scatterer element into its isotopes',
                         action='store_true')
     parser.add_argument('-m', '--mats',
                         help='JSON dictionary containing material number assignement for each element, e.g. \'{"C":37, "H": 38}\'',
@@ -1032,6 +1064,7 @@ if __name__ == '__main__':
     verbosity = options.verbosity
     mat_numbers = options.mats
     vdoslux = options.luxury
+    include_gif = options.gif
     isotopic_expansion = options.isotopic
     params = EndfParameters()
     params.alab = options.alab
@@ -1040,7 +1073,7 @@ if __name__ == '__main__':
     params.libname = options.libname
     params.nlib = options.nlib
     
-    file_names = ncmat2endf(fn, name, params, temperatures, mat_numbers, elastic_mode, isotopic_expansion, vdoslux, verbosity)
+    file_names = ncmat2endf(fn, name, params, temperatures, mat_numbers, elastic_mode, include_gif, isotopic_expansion, vdoslux, verbosity)
     if verbosity > 0:
         print('Files created:')
         for fn, frac in file_names: print(f'  {fn}')

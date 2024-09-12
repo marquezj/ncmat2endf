@@ -34,6 +34,9 @@ The script can be used from the command line:
 with the following parameters:
 
 ```
+positional arguments:
+  input                 NCMAT file to convert
+
 options:
   -h, --help            show this help message and exit
   -n NAME, --name NAME  Name of the compound in the NCMAT file (default: None)

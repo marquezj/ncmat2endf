@@ -34,10 +34,7 @@ The script can be used from the command line:
 with the following parameters:
 
 ```
-positional arguments:
-  input                 NCMAT file to convert
-
-optional arguments:
+options:
   -h, --help            show this help message and exit
   -n NAME, --name NAME  Name of the compound in the NCMAT file (default: None)
   -t TEMPERATURES [TEMPERATURES ...], --temperatures TEMPERATURES [TEMPERATURES ...]
@@ -47,11 +44,10 @@ optional arguments:
   -v VERBOSITY, --verbosity VERBOSITY
                         Controls how verbose should be the output (default: 1)
   -l {1,2,3,4,5}, --luxury {1,2,3,4,5}
-                        Set the NCrystal vdoslux parameter used to generate the library. 3 is normal, 4 is fine and 5 is very fine.
-                        (default: 3)
-  -i, --isotopic        Expand the each scatterer element into its isotopes (default: False)
-  -m MATS, --mats MATS  JSON dictionary containing material number assignement for each element, e.g. '{"C":37, "H": 38}' (default:
-                        None)
+                        Set the NCrystal vdoslux parameter used to generate the library. 3 is normal, 4 is fine and 5 is very fine. (default: 3)
+  -g, --gif             Include the generalized information file (MF=7/MT=451) (default: False)
+  -i, --isotopic        Expand each scatterer element into its isotopes (default: False)
+  -m MATS, --mats MATS  JSON dictionary containing material number assignement for each element, e.g. '{"C":37, "H": 38}' (default: None)
   --alab ALAB           Set the ALAB parameter in MF1/MT451 (default: MyLAB)
   --auth AUTH           Set the AUTH parameter in MF1/MT451 (default: NCrystal)
   --libname LIBNAME     Set the LIBNAME parameter in MF1/MT451 (default: MyLib)

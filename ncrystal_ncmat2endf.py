@@ -166,9 +166,9 @@ class ElementData():
         self._elastic = None
         self._element_name = ad.displayLabel()
         Z = '{:3d}'.format(ad.Z())
-        A = '  0' if ad.isNaturalElement() else '{:3d}'.format(ad.A())
-        sym = self._get_symbol(self._element_name).ljust(3)
-        self._zsymam = '{:3s}-{:3s}-{:3s}'.format(Z,sym,A)
+        A = '   ' if ad.isNaturalElement() else '{:3d}'.format(ad.A())
+        sym = self._get_symbol(self._element_name).ljust(2)
+        self._zsymam = '{:3s}-{:2s}-{:3s}'.format(Z,sym,A)
         self._za = ad.Z()*1000+ad.A()
 
     def _get_symbol(self, isotope_name):

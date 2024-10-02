@@ -56,6 +56,7 @@ options:
   --libname LIBNAME     Set the LIBNAME parameter in MF1/MT451 (default: MyLib)
   --nlib NLIB           Set the NLIB parameter in MF1/MT451 (default: 0)
   --smin SMIN           Set the minimum value of S(alpha, beta) stored in MF7/MT4 (default: 1e-100)
+  --lasym {0,1,2,3}     Write symmetric S(a,b) table (default: 0)
 
 ```
 Ths script produces one TSL ENDF file per element in the material. The filenames are written as `tsl_SYMBOL_in_NAME.endf` where `NAME` is the

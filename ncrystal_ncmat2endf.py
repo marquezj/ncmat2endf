@@ -58,7 +58,9 @@ assert version_num >=  1100, "Too old endf-parserpy found. Version 0.11.0 or abo
 available_elastic_modes = ('greater', 'scaled', 'mixed')
 mass_neutron = 1.04540751e-4 #  eV*ps^2*Angstrom^-2 
 hbar = 0.658211951e-3 # eV*ps 
-
+kT0 = 0.0253 # eV
+T0 = 293.6 # K
+        
 def endf_roundoff(x):
     """Limit the precision of a float to what can be represented in an ENDF-6 file
        
@@ -161,7 +163,7 @@ class ElementData():
         self._alpha = np.array([])
         self._beta = np.array([])
         self._beta_total = np.array([])
-        self._sab = []
+        self._sab_total = []
         self._teff = []
         self._elastic = None
         self._element_name = ad.displayLabel()
@@ -215,11 +217,11 @@ class ElementData():
         self._beta_total = x
 
     @property
-    def sab(self):
-        return self._sab
-    @sab.setter
-    def sab(self, x):
-        self._sab = x
+    def sab_total(self):
+        return self._sab_total
+    @sab_total.setter
+    def sab_total(self, x):
+        self._sab_total = x
 
     @property
     def dwi(self):
@@ -381,8 +383,7 @@ class NuclearData():
     def _get_alpha_beta_grid(self):
         T = self._temperatures[0]
         m = NC.load(f'{self._ncmat_fn};temp={T}K;vdoslux={self._vdoslux}')
-        kT0 = 0.0253 # eV
-        kT = kT0*T/293.6 # eV
+        kT = kT0*T/T0 # eV
         for di in m.info.dyninfos:
             element_name = di.atomData.displayLabel()
             if type(di) in [NC.core.Info.DI_VDOS, NC.core.Info.DI_VDOSDebye]:
@@ -399,7 +400,7 @@ class NuclearData():
             #
             for T in self._temperatures[1:]:
                 m = NC.load(f'{self._ncmat_fn};temp={T}K;vdoslux={self._vdoslux}')
-                kT = kT0*T/293.6 # eV
+                kT = kT0*T/T0 # eV
                 for di in m.info.dyninfos:
                     element_name = di.atomData.displayLabel()
                     if type(di) in [NC.core.Info.DI_VDOS, NC.core.Info.DI_VDOSDebye]:
@@ -407,22 +408,22 @@ class NuclearData():
                         self._elements[element_name].alpha = np.unique(np.concatenate((self._elements[element_name].alpha, sctknl['alpha']*kT/kT0)))
                         self._elements[element_name].beta_total = np.unique(np.concatenate((self._elements[element_name].beta_total, sctknl['beta']*kT/kT0)))
         for frac, ad in self._composition:
-                element_name = ad.displayLabel()
-                #
-                # Remove points that cannot be represented in ENDF data
-                #
-                self._elements[element_name].alpha = np.unique(endf_roundoff(self._elements[element_name].alpha))
-                self._elements[element_name].beta_total = np.unique(endf_roundoff(self._elements[element_name].beta_total))
-                x = self._elements[element_name].beta_total[np.where(self._elements[element_name].beta_total<=0)] # get negative beta
-                self._elements[element_name].beta = -x[::-1] # Invert beta and change sign
-                self._elements[element_name].beta[0] = 0.0
-                if self._verbosity > 2:
-                    print(f'>>> alpha points: {len(self._elements[element_name].alpha)}, alpha range: ({np.min(self._elements[element_name].alpha*kT0/kT)}, {np.max(self._elements[element_name].alpha*kT0/kT)})')
-                    print(f'>>> beta points: {len(self._elements[element_name].beta)}, beta range: ({np.min(self._elements[element_name].beta*kT0/kT)}, {np.max(self._elements[element_name].beta*kT0/kT)})')
+            element_name = ad.displayLabel()
+            #
+            # Remove points that cannot be represented in ENDF data
+            #
+            self._elements[element_name].alpha = np.unique(endf_roundoff(self._elements[element_name].alpha))
+            self._elements[element_name].beta_total = np.unique(endf_roundoff(self._elements[element_name].beta_total))
+            x = self._elements[element_name].beta_total[np.where(self._elements[element_name].beta_total<=0)] # get negative beta
+            self._elements[element_name].beta = -x[::-1] # Invert beta and change sign
+            self._elements[element_name].beta[0] = 0.0
+            if self._verbosity > 2:
+                print(f'>>> alpha points: {len(self._elements[element_name].alpha)}, alpha range: ({np.min(self._elements[element_name].alpha*kT0/kT)}, {np.max(self._elements[element_name].alpha*kT0/kT)})')
+                print(f'>>> beta points: {len(self._elements[element_name].beta)}, beta range: ({np.min(self._elements[element_name].beta*kT0/kT)}, {np.max(self._elements[element_name].beta*kT0/kT)})')
 
     def _get_elastic_data(self, elastic_mode):
         for T in self._temperatures:
-            m = NC.load(f'{self._ncmat_fn};temp={T}K;vdoslux={self._vdoslux};comp=bragg')
+            m = NC.load(f'{self._ncmat_fn};temp={T}K;vdoslux={self._vdoslux};comp=bragg;dcutoff=0.1')
             if m.info.hasAtomPositions():
                 #
                 # Load coherent elastic data
@@ -432,8 +433,8 @@ class NuclearData():
                     edges = np.array([NC.wl2ekin(2.0*e.dspacing) for e in m.info.hklObjects()])
                     self._edges = np.unique(endf_roundoff(edges))
                     # Coherent scattering XS is evaluated between edges
-                    eps = 1e-6
-                    self._evalpoints = np.concatenate(((1-eps)*self._edges[:-1]+eps*self._edges[1:], [self._edges[-1]]))
+                    eps = 1e-3
+                    self._evalpoints = np.concatenate((self._edges[:-1]**(1-eps)*self._edges[1:]**eps, [self._edges[-1]]))
                 sigmaE = endf_roundoff(m.scatter.xsect(self._evalpoints)*self._evalpoints)
                 assert np.all(sigmaE[:-1] <= sigmaE[1:]), 'Sigma*E in Bragg edges not cummulative'
                 self._sigmaE.append(sigmaE)
@@ -534,8 +535,7 @@ class NuclearData():
                     beta = sctknl['beta']
                     sab = sctknl['sab']
                     sab.shape = (len(beta), len(alpha))
-                    kT = 0.0253/293.6*T # eV
-                    kT0 = 0.0253 # eV
+                    kT = kT0/T0*T # eV
                     alpha_grid, beta_grid = np.meshgrid(self._elements[element_name]._alpha*kT0/kT, self._elements[element_name]._beta_total*kT0/kT)
                     points0 = np.column_stack((alpha_grid.ravel(), beta_grid.ravel()))
                     #
@@ -544,12 +544,7 @@ class NuclearData():
                     #
                     sab_int = scint.interpn((alpha, beta), sab.transpose(), points0, bounds_error=False, fill_value=0.0, method='linear')
                     sab_int.shape = np.shape(alpha_grid)
-                    sym = np.exp(beta_grid/2)
-                    sab_sym = sab_int*sym
-                    sab_sym2 = sab_sym[np.where(beta_grid<=0)] # get negative branch of S(a,b)
-                    sab_sym2.shape = (len(self._elements[element_name]._beta), len(self._elements[element_name]._alpha))
-                    sab_sym3 = sab_sym2[::-1,:]  # Invert S(a,b) for negative beta
-                    self._elements[element_name]._sab.append(sab_sym3.transpose())
+                    self._elements[element_name]._sab_total.append(sab_int) 
                     emin = di.vdosData()[0][0]
                     emax = di.vdosData()[0][1]
                     rho = di.vdosData()[1]
@@ -681,7 +676,7 @@ class EndfFile():
         d['ZA'] = za
         d['AWR'] = awr
         d['LAT'] =  1 # (alpha, beta) grid written for kT0 = 0.0253 eV
-        d['LASYM'] = 0 # symmetric S(a,b)
+        d['LASYM'] = endf_parameters.lasym # symmetric/asymmetric S(a,b)
         d['LLN'] = 0 # linear S is stored
         d['NI'] = 6
         d['NS'] = 0
@@ -694,41 +689,113 @@ class EndfFile():
                  }
         alpha = data.elements[self._element_name].alpha
         beta = data.elements[self._element_name].beta
+        sab_data = []
+        for sab_total, T in zip(data.elements[self._element_name].sab_total, temperatures):
+            kT = T/T0*kT0            
+            alpha_grid, beta_grid = np.meshgrid(alpha*kT0/kT, data.elements[self._element_name].beta_total*kT0/kT)
+            if (endf_parameters.lasym == 0) or (endf_parameters.lasym == 1):
+                sym = np.exp(beta_grid/2)
+            if endf_parameters.lasym == 3:
+                # S(a,b) for all beta
+                sab_data.append(sab_total.transpose())
+                continue
+            if endf_parameters.lasym == 2:
+                # S(a,b) for negative beta
+                sab_sym2 = sab_total[np.where(beta_grid<=0)] # get negative branch of S(a,b)
+                sab_sym2.shape = (len(beta), len(alpha))
+                sab_sym3 = sab_sym2[::-1,:]  # Invert S(a,b) for negative beta
+                sab_data.append(sab_sym3.transpose())
+                continue
+            if endf_parameters.lasym == 1:
+                # S(a,b)*exp(-b/2) for all beta
+                sab_sym = sab_total*sym
+                sab_data.append(sab_sym.transpose())
+                continue
+            if endf_parameters.lasym == 0:
+                # S(a,b)*exp(-b/2) for negative beta
+                sab_sym = sab_total*sym
+                sab_sym2 = sab_sym[np.where(beta_grid<=0)] # get negative branch of S(a,b)
+                sab_sym2.shape = (len(beta), len(alpha))
+                sab_sym3 = sab_sym2[::-1,:]  # Invert S(a,b) for negative beta
+                sab_data.append(sab_sym3.transpose())
+                continue
+                    
+        if (endf_parameters.lasym == 0) or (endf_parameters.lasym == 2):
+            # Save S(a,b) or S(a,b)*exp(-b/2) for negative beta
+            d['NB'] = len(beta) 
+            d['beta_interp/NBT'] = [len(beta)]
+            d['beta_interp/INT'] = [4]
         
-        d['NB'] = len(beta) 
-        d['beta_interp/NBT'] = [len(beta)]
-        d['beta_interp/INT'] = [4]
-    
-        d['T0'] = temperatures[0]
-        d['beta'] = {k:v for k, v in enumerate(beta,start=1)}
-        d['LT'] = {k:len(temperatures)-1 for k, v in enumerate(beta,start=1)}
-        d['T'] = {k:v for k,v in enumerate(temperatures[1:], start=1)}
-        d['LI'] = {k:4 for k,v in enumerate(temperatures[1:], start=1)}
-        d['NP'] = len(alpha)
-        S1 = {}
-        sab = data.elements[self._element_name].sab[0]
-        sab[sab < endf_parameters.smin] = 0.0
-        for j,v in enumerate(beta, start=1):
-            S1[j] = {}
-            S1[j]['NBT'] = [len(alpha)]
-            S1[j]['INT'] = [4]
-            S1[j]['alpha'] = (alpha/awr).tolist()
-            S1[j]['S'] = sab[:,j-1].tolist()
-        d['S_table'] = S1
+            d['T0'] = temperatures[0]
+            d['beta'] = {k:v for k, v in enumerate(beta,start=1)}
+            d['LT'] = {k:len(temperatures)-1 for k, v in enumerate(beta,start=1)}
+            d['T'] = {k:v for k,v in enumerate(temperatures[1:], start=1)}
+            d['LI'] = {k:4 for k,v in enumerate(temperatures[1:], start=1)}
+            d['NP'] = len(alpha)
+            S1 = {}
+            sab = sab_data[0]
+            sab[sab < endf_parameters.smin] = 0.0
+            for j,v in enumerate(beta, start=1):
+                S1[j] = {}
+                S1[j]['NBT'] = [len(alpha)]
+                S1[j]['INT'] = [4]
+                S1[j]['alpha'] = (alpha/awr).tolist()
+                S1[j]['S'] = sab[:,j-1].tolist()
+            d['S_table'] = S1
+                
+            S2 = {}
+            if len(temperatures) > 1:
+                for q, v in enumerate(alpha, start=1):
+                    S2[q] = {}
+                    for j,v in enumerate(beta, start=1):
+                        sab = []
+                        for i,v in enumerate(temperatures[1:], start=1):
+                                sval = sab_data[i][q-1,j-1]
+                                if sval < endf_parameters.smin:
+                                    sval = 0.0
+                                sab.append(sval)
+                        S2[q][j] = {k: v for k,v in enumerate(sab, start =1)}
+            d['S'] = S2
+        elif (endf_parameters.lasym == 1) or (endf_parameters.lasym == 3):
+            # Save S(a,b) or S(a,b)*exp(-b/2) for all beta
+            alpha = data.elements[self._element_name].alpha
+            beta = data.elements[self._element_name].beta_total
             
-        S2 = {}
-        if len(temperatures) > 1:
-            for q, v in enumerate(alpha, start=1):
-                S2[q] = {}
-                for j,v in enumerate(beta, start=1):
-                    sab = []
-                    for i,v in enumerate(temperatures[1:], start=1):
-                            sval = data.elements[self._element_name].sab[i][q-1,j-1]
-                            if sval < endf_parameters.smin:
-                                sval = 0.0
-                            sab.append(sval)
-                    S2[q][j] = {k: v for k,v in enumerate(sab, start =1)}
-        d['S'] = S2
+            d['NB'] = len(beta) 
+            d['beta_interp/NBT'] = [len(beta)]
+            d['beta_interp/INT'] = [4]
+        
+            d['T0'] = temperatures[0]
+            d['beta'] = {k:v for k, v in enumerate(beta,start=1)}
+            d['LT'] = {k:len(temperatures)-1 for k, v in enumerate(beta,start=1)}
+            d['T'] = {k:v for k,v in enumerate(temperatures[1:], start=1)}
+            d['LI'] = {k:4 for k,v in enumerate(temperatures[1:], start=1)}
+            d['NP'] = len(alpha)
+            S1 = {}
+            sab = sab_data[0]
+            sab[sab < endf_parameters.smin] = 0.0
+            for j,v in enumerate(beta, start=1):
+                S1[j] = {}
+                S1[j]['NBT'] = [len(alpha)]
+                S1[j]['INT'] = [4]
+                S1[j]['alpha'] = (alpha/awr).tolist()
+                S1[j]['S'] = sab[:,j-1].tolist()
+            d['S_table'] = S1
+            
+            S2 = {}
+            if len(temperatures) > 1:
+                for q, v in enumerate(alpha, start=1):
+                    S2[q] = {}
+                    for j,v in enumerate(beta, start=1):
+                        sab = []
+                        for i,v in enumerate(temperatures[1:], start=1):
+                                sval = sab_data[i][q-1,j-1]
+                                if sval < endf_parameters.smin:
+                                    sval = 0.0
+                                sab.append(sval)
+                        S2[q][j] = {k: v for k,v in enumerate(sab, start =1)}
+            d['S'] = S2
+
         d['teff0_table/Teff0'] = data.elements[self._element_name].teff
         d['teff0_table/Tint'] = temperatures.tolist()
         d['teff0_table/NBT'] = [len(temperatures)]
@@ -870,7 +937,8 @@ class EndfParameters():
         self._nlib = 0
         self._lrel = 0
         self._smin = 1e-100
-        self._emax = 5.0 
+        self._emax = 5.0
+        self._lasym = 0 # Symmetric S(a,b) as default 
 
     @property
     def alab(self):
@@ -927,6 +995,13 @@ class EndfParameters():
     def endate(self):
         return self._endate
 
+    @property
+    def lasym(self):
+        return self._lasym
+    @lasym.setter
+    def lasym(self, x):
+        self._lasym = x
+
 def ncmat2endf(ncmat_fn, name, endf_parameters, temperatures=(293.6,), mat_numbers=None, elastic_mode='scaled', include_gif=False, isotopic_expansion=False, vdoslux=3, verbosity=1):
     """Generates a set of ENDF-6 formatted files for a given NCMAT file.
        
@@ -968,6 +1043,9 @@ def ncmat2endf(ncmat_fn, name, endf_parameters, temperatures=(293.6,), mat_numbe
         List of tuples contanining the ENDF-6 files and their fraction in the composition
         
     """
+    if verbosity > 0 and endf_parameters.lasym > 0:
+        print(f'Creating non standard S(a,b) with LASYM = {endf_parameters.lasym}')
+        
     if type(temperatures) in [int, float]:
         temperatures = (temperatures,)
     
@@ -1052,6 +1130,8 @@ def parse_args(args=sys.argv[1:]):
     parser.add_argument('--smin',
                         help='Set the minimum value of S(alpha, beta) stored in MF7/MT4',
                         type=float, default=endf_defaults.smin)
+    parser.add_argument('--lasym', help='Write symmetric S(a,b) table', 
+                       type=int, default=0, choices=range(0, 4))
     return parser.parse_args(args)
 
 if __name__ == '__main__':
@@ -1072,6 +1152,7 @@ if __name__ == '__main__':
     params.smin = options.smin
     params.libname = options.libname
     params.nlib = options.nlib
+    params.lasym = options.lasym
     
     file_names = ncmat2endf(fn, name, params, temperatures, mat_numbers, elastic_mode, include_gif, isotopic_expansion, vdoslux, verbosity)
     if verbosity > 0:

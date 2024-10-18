@@ -1070,7 +1070,7 @@ def ncmat2endf(ncmat_fn, name, endf_parameters, temperatures=(293.6,), mat_numbe
         element_name = ad.displayLabel()
         mat = 999 if mat_numbers is None else mat_numbers[element_name]
         endf_fn = f'tsl_{name}.endf' if element_name == name else f'tsl_{element_name}_in_{name}.endf'
-        if data.elements[element_name].sab is not None:
+        if data.elements[element_name].sab_total is not None:
             endf_file = EndfFile(element_name, data, mat, endf_parameters, include_gif, isotopic_expansion, verbosity)
             endf_file.write(endf_fn)
             file_names.append((endf_fn, frac))

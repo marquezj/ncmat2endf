@@ -1060,7 +1060,7 @@ def ncmat2endf(ncmat_fn, name, endf_parameters, temperatures=(293.6,), mat_numbe
     if len(temperatures) > 1:
         warnings.warn('Multiple temperatures requested. Although this is supported, '
         +'it is not recommended because NCrystal generates a custom (alpha,beta) grid for each temperature. '
-        +'The (alpha,beta) grid for first temperature will be used, and S(alpha, beta) for other temperatures will be interpolated.')
+        +'The (alpha,beta) grid for first temperature will be used, and S(alpha, beta) for other temperatures will be interpolated.', stacklevel=2)
     if verbosity > 0:
         print('Get nuclear data...')
         

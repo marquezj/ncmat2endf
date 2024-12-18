@@ -866,12 +866,20 @@ class EndfFile():
         d['RDATE'] = rdate
         d['ENDATE'] = endf_parameters.endate.ljust(8)
         description = []
+        description.append(66*'*')
         description.append(''.ljust(66))
-        description.append(' Converted from:'.ljust(66))
+        description.append(' This file was converted from the following NCMAT [1] file:'.ljust(66))
         description.append(data.ncmat_fn.center(66))
+        description.append(' using ncmat2endf [2] and endf-parserpy [3].'.ljust(66))
+        description.append(''.ljust(66))
         description.append(' Temperatures:'.ljust(66))
         for T in data.temperatures:
             description.append(f'       {T:.2f} K'.ljust(66))
+        description.append(''.ljust(66))
+        description.append('References:'.ljust(66))
+        description.append('[1] https://github.com/mctools/ncrystal'.ljust(66))
+        description.append('[2] https://github.com/marquezj/ncmat2endf'.ljust(66))
+        description.append('[3] https://endf-parserpy.readthedocs.io/en/latest/'.ljust(66))
         description.append(''.ljust(66))
         description.append(66*'*')
         description.append(''.ljust(66))
